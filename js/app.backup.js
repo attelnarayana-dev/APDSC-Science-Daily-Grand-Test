@@ -1,0 +1,26 @@
+const KEY='apdsc_daily_grand_test_v1';
+const state=JSON.parse(localStorage.getItem(KEY)||'{"used":[],"tests":{},"day":1}');
+const bank=window.QUESTION_BANK||[];
+function save(){localStorage.setItem(KEY,JSON.stringify(state));}
+function esc(s){return String(s).replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));}
+function shuffle(a){return [...a].sort(()=>Math.random()-.5)}
+function makeTest(day){
+ const used=new Set(state.used);
+ let fresh=shuffle(bank.filter(x=>!used.has(x.id)));
+ // If the bank is too small for 160, the UI explicitly reports the shortage instead of repeating.
+ if(fresh.length<160) return {shortage:160-fresh.length, questions:fresh};
+ const qs=fresh.slice(0,160); state.tests[day]={ids:qs.map(x=>x.id),started:new Date().toISOString()}; state.used.push(...qs.map(x=>x.id)); save(); return {questions:qs};
+}
+function home(){
+ const completed=Object.keys(state.tests).filter(k=>state.tests[k].finished).length;
+ document.getElementById('app').innerHTML=`<main class="wrap"><header><div><span class="eyebrow">AP DSC • S.A. SCIENCE</span><h1>Daily Grand Test</h1><p>English + తెలుగు · 160 MCQs · Unique-question engine</p></div><div class="badge">Day ${state.day}</div></header><section class="grid"><div class="card hero"><h2>Today's Grand Test</h2><p>Physical Science + Biological Science</p><button onclick="start()">Start Day ${state.day} Exam</button><small>Previously used questions are permanently excluded from future tests.</small></div><div class="card"><h3>Progress</h3><div class="stat"><b>${completed}</b><span>Completed Tests</span></div><div class="stat"><b>${state.used.length}</b><span>Questions Used</span></div></div></section><section class="card"><h3>Test History</h3><div id="history">${history()}</div></section><section class="note"><b>Important:</b> This starter build refuses to repeat questions when the bank has fewer than 160 unused questions. Add the official syllabus question bank before running a full 160-question day.</section></main>`;
+}
+function history(){let ks=Object.keys(state.tests).sort((a,b)=>a-b); if(!ks.length)return '<p class="muted">No tests completed yet.</p>'; return ks.map(k=>{let t=state.tests[k];return `<div class="row"><span>Day ${k}</span><span>${t.finished?'Completed':'Started'}</span><b>${t.score??'—'}</b></div>`}).join('')}
+let test=null;
+function start(){test=makeTest(state.day); if(test.shortage){alert(`Only ${test.questions.length} unused questions are available. ${test.shortage} more unique questions are required for a 160-question exam. No repeat questions were inserted.`); return;} renderExam(0,{});}
+function renderExam(i,answers){test.i=i;test.answers=answers;let q=test.questions[i];document.getElementById('app').innerHTML=`<main class="exam"><header class="examhead"><div><span class="eyebrow">DAY ${state.day}</span><h1>Science Grand Test</h1></div><div class="timer" id="timer">02:00:00</div></header><div class="progress"><span style="width:${((i+1)/160)*100}%"></span></div><div class="examgrid"><aside class="palette"><h3>Questions</h3>${Array.from({length:160},(_,n)=>`<button class="${n===i?'active':''} ${answers[n]!=null?'answered':''}" onclick="go(${n})">${n+1}</button>`).join('')}</aside><section class="question"><div class="qtop"><span>Question ${i+1} of 160</span><span>${esc(q.subject)} • ${esc(q.topic)}</span></div><h2>${esc(q.q)}</h2><h3 class="telugu">${esc(q.te)}</h3><div class="options">${q.o.map((x,n)=>`<label class="option"><input type="radio" name="opt" ${answers[i]===n?'checked':''} onchange="pick(${n})"><span>${String.fromCharCode(65+n)}. ${esc(x)}</span></label>`).join('')}</div><div class="actions"><button class="secondary" onclick="prev()">Previous</button><button class="secondary" onclick="mark()">Mark for Review</button>${i<159?`<button onclick="next()">Next</button>`:`<button onclick="submitTest()">Submit Test</button>`}</div></section></div></main>`}
+function pick(n){test.answers[test.i]=n}
+function go(n){renderExam(n,test.answers)} function next(){renderExam(Math.min(159,test.i+1),test.answers)} function prev(){renderExam(Math.max(0,test.i-1),test.answers)} function mark(){test.answers['r'+test.i]=true;next()}
+function submitTest(){if(!confirm('Submit the test?'))return;let score=0;test.questions.forEach((q,i)=>{if(test.answers[i]===q.a)score++});state.tests[state.day].finished=true;state.tests[state.day].score=score;state.tests[state.day].correct=score;state.tests[state.day].wrong=Object.keys(test.answers).filter(k=>!String(k).startsWith('r')&&test.answers[k]!=null).length-score;state.tests[state.day].unattempted=160-Object.keys(test.answers).filter(k=>!String(k).startsWith('r')&&test.answers[k]!=null).length;state.day++;save();result(score)}
+function result(score){let t=state.tests[state.day-1];document.getElementById('app').innerHTML=`<main class="wrap"><header><div><span class="eyebrow">TEST COMPLETED</span><h1>Day ${state.day-1} Result</h1></div></header><section class="result card"><div class="score">${score}<small>/ 160</small></div><div class="metrics"><div><b>${t.correct}</b><span>Correct</span></div><div><b>${t.wrong}</b><span>Wrong</span></div><div><b>${t.unattempted}</b><span>Unattempted</span></div></div><button onclick="home()">Back to Dashboard</button></section></main>`}
+home();
