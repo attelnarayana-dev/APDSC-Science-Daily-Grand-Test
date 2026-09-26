@@ -10,15 +10,28 @@ let state = JSON.parse(
 let exam = null;
 let timerInterval = null;
 
-// Recover an unfinished exam created by an older version.
-// Questions from an unfinished exam must not remain permanently used.
+// Recover unfinished exams safely.
+// Questions become permanently used only after Submit.
 (function recoverUnfinishedExam() {
   const active = state.active;
-  const test = state.tests?.[state.day];
+  const currentTest = state.tests?.[state.day];
 
-  if (active && test && test.finished === false && Array.isArray(active.ids)) {
-    const activeIds = new Set(active.ids);
-    state.used = state.used.filter(id => !activeIds.has(id));
+  const ids = new Set();
+
+  if (active && Array.isArray(active.ids)) {
+    active.ids.forEach(id => ids.add(id));
+  }
+
+  if (
+    currentTest &&
+    currentTest.finished === false &&
+    Array.isArray(currentTest.ids)
+  ) {
+    currentTest.ids.forEach(id => ids.add(id));
+  }
+
+  if (ids.size > 0) {
+    state.used = state.used.filter(id => !ids.has(id));
     save();
   }
 })();
