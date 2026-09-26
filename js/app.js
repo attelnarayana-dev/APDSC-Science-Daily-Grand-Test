@@ -29,7 +29,14 @@ function shuffle(array) {
 }
 
 function getBank() {
-  return window.QUESTIONS || [];
+  if (state.day === 1) {
+    return window.QUESTIONS || [];
+  }
+
+  return (
+    window.DSC_DAY_BANKS &&
+    window.DSC_DAY_BANKS[state.day]
+  ) || [];
 }
 
 function getUnusedQuestions() {
@@ -37,9 +44,34 @@ function getUnusedQuestions() {
   return getBank().filter(q => q.id && !used.has(q.id));
 }
 
-function startExam() {
+async function startExam() {
 
-  const unused = shuffle(getUnusedQuestions());
+  const dayConfig =
+    (window.DSC_DAYS || [])
+      .find(d => d.day === state.day);
+
+  if (dayConfig && dayConfig.status === "locked") {
+    alert("Day " + state.day + " is locked. Questions are not ready yet.");
+    home();
+    return;
+  }
+
+  if (state.day > 1) {
+    try {
+      await window.loadDayBank(state.day);
+    } catch (error) {
+      console.error(error);
+      alert("Unable to load Day " + state.day + " question bank.");
+      return;
+    }
+  }
+
+  const bank = getBank();
+  const used = new Set(state.used);
+
+  const unused = shuffle(
+    bank.filter(q => q && q.id && !used.has(q.id))
+  );
 
   if (unused.length < QUESTION_COUNT) {
     document.getElementById("app").innerHTML = `
@@ -47,10 +79,7 @@ function startExam() {
         <section class="card">
           <h1>Question Bank Not Ready</h1>
           <h2>${unused.length} unique questions available</h2>
-          <p>
-            A complete exam requires 160 unused questions.
-            Repeated questions will never be inserted.
-          </p>
+          <p>A complete exam requires 160 unused questions.</p>
           <p>
             Required: <b>160</b><br>
             Available: <b>${unused.length}</b><br>
@@ -74,19 +103,26 @@ function startExam() {
     endTime: Date.now() + EXAM_TIME * 1000
   };
 
-  state.used.push(...questions.map(q => q.id));
-
   state.tests[state.day] = {
     ids: questions.map(q => q.id),
-    started: new Date().toISOString(),
-    finished: false
+    finished: false,
+    startedAt: Date.now()
+  };
+
+  state.active = {
+    day: state.day,
+    ids: questions.map(q => q.id),
+    answers: {},
+    review: {},
+    current: 0,
+    endTime: exam.endTime
   };
 
   save();
-
   renderExam();
   startTimer();
 }
+
 
 function startTimer() {
 
@@ -211,16 +247,16 @@ function renderExam() {
           </div>
 
           <h2>
-            ${escapeHTML(q.q)}
+            ${escapeHTML(q.question?.en ?? q.q ?? "")}
           </h2>
 
           <div class="telugu">
-            ${escapeHTML(q.te)}
+            ${escapeHTML(q.question?.te ?? q.te ?? "")}
           </div>
 
           <div class="options">
 
-            ${q.o.map((option,index) => `
+            ${(q.options ?? q.o ?? []).map((option,index) => `
               <label class="option">
 
                 <input
@@ -232,7 +268,7 @@ function renderExam() {
 
                 <span>
                   <b>${String.fromCharCode(65 + index)}.</b>
-                  ${escapeHTML(option)}
+                  ${escapeHTML(typeof option === "object" ? `${option.en ?? ""} — ${option.te ?? ""}` : option)}
                 </span>
 
               </label>
@@ -466,6 +502,13 @@ function submitExam(autoSubmit) {
 
   };
 
+  state.used = Array.from(
+    new Set([
+      ...state.used,
+      ...exam.questions.map(q => q.id)
+    ])
+  );
+
   state.tests[exam.day] = result;
 
   state.active = null;
@@ -650,6 +693,56 @@ function home() {
         `
       }
 
+      <section class="card" style="margin-top:20px">
+
+        <h2>📚 90 Days Grand Tests</h2>
+
+        <p>
+          Select your Day. Each Day contains 160 unique MCQs.
+        </p>
+
+        <div class="day-grid">
+
+          ${
+            (window.DSC_DAYS || []).map(d => {
+
+              const completedDay =
+                Object.values(state.tests)
+                  .some(t => t.finished && t.day === d.day);
+
+              const isActive =
+                state.day === d.day;
+
+              const locked =
+                d.status === "locked";
+
+              return `
+                <button
+                  class="day-btn ${isActive ? "selected" : ""} ${locked ? "locked" : ""}"
+                  ${locked ? 'disabled' : `onclick="selectDay(${d.day})"`}>
+
+                  <strong>Day ${d.day}</strong>
+
+                  <span>
+                    ${
+                      completedDay
+                        ? "✓ Completed"
+                        : locked
+                          ? "🔒 Locked"
+                          : "▶ Start"
+                    }
+                  </span>
+
+                </button>
+              `;
+
+            }).join("")
+          }
+
+        </div>
+
+      </section>
+
       <section class="stats">
 
         <div class="card">
@@ -671,6 +764,29 @@ function home() {
 
     </main>
   `;
+}
+
+function selectDay(day) {
+
+  const config =
+    (window.DSC_DAYS || [])
+      .find(d => d.day === day);
+
+  if (!config) return;
+
+  if (config.status === "locked") {
+    alert("Day " + day + " is not available yet.");
+    return;
+  }
+
+  if (state.active) {
+    alert("Please finish or continue the current exam first.");
+    return;
+  }
+
+  state.day = day;
+  save();
+  home();
 }
 
 function resumeExam() {
